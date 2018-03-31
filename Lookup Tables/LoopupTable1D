@@ -1,0 +1,107 @@
+-- V1.0a AR
+-- 01.04.2017 07:15:46 AR V1.0b
+-- 13.07.2017 08:30:22 AR V1.0c
+-- 08.10.2017 15:20:38 AR V1.0d Automatic output type detection and check
+
+generic = {
+  parameter = {
+    table = '1\n2\n3',
+    interpolate = false
+  },
+
+  init = function(self)
+    block.setInputsPinCount(1)
+    block.setOutputsPinCount(1)
+    block.modifyFlags('SupressStopFunctionCall', true)
+  end,
+
+  open = function(self)
+    gui.add('Info', 'Info', '1-D Lookup table', [[
+      q = tabel[a]
+      Index is limitted to 1 to length of table.
+      If interpolate is checked, output value is linear interpolate between
+      the table entrys.
+      If not the table index ist roundet down to next integer value.
+    ]])
+    gui.add('Memo', 'MemoTable', 'Table rows\n\n(First line is index 1)', {Width = 300, Height = 200, RemoveEmptyLines = true})
+    gui.add('CheckBox', 'CheckBoxInterpolate', 'Interpolate')
+    gui.set('MemoTable', 'Text', self.parameter.table)
+    gui.set('CheckBoxInterpolate', self.parameter.interpolate)
+    gui.setSize()
+  end,
+
+  apply = function(self)
+    local sys = require 'sys'
+    self.parameter.table = gui.get('MemoTable', 'Text')
+    self.parameter.interpolate = gui.get('CheckBoxInterpolate')
+    if self.parameter.interpolate then
+      for line in self.parameter.table:gmatch("[^%c]+") do
+        assert(sys.typeOfExpression(line) ~= 3, 'All table elements must be numbers')
+      end
+      block.setOutputPinTypeRestrains(1, 'number')
+    else
+      local types = 0
+      for line in self.parameter.table:gmatch("[^%c]+") do
+        types = types | (1 << sys.typeOfExpression(line))
+      end
+      block.setOutputPinTypeRestrains(1, types)
+    end
+  end,
+
+  close = function()
+  end,
+
+  avatar = function(self)
+    return block.getDefaultAvatar(0x50, '"[\\xE2\\x88\\xB7]"')
+  end,
+
+  generate = function(self)
+    local source
+    if self.parameter.interpolate then
+      source = [==[
+        local block = {}
+
+        block.start = function()
+          block.table = {TABLE}
+        end
+
+        block.step = function(a)
+          if a >= #block.table then
+            return block.table[#block.table]
+          end
+          if a <= 1.0 then
+            return block.table[1]
+          end
+          local i, f = math.modf(a)
+          return block.table[i] * (1.0 - f) + block.table[i + 1] * f
+        end
+        return block
+      ]==]
+    else
+      source = [==[
+        local block = {}
+
+        block.start = function()
+          block.table = {TABLE}
+        end
+
+        block.step = function(a)
+          a = math.floor(a)
+          if a >= #block.table then
+            return block.table[#block.table]
+          end
+          if a <= 1.0 then
+            return block.table[1]
+          end
+          return block.table[a]
+        end
+        return block
+      ]==]
+    end
+    local replaces = {}
+    replaces['TABLE'] = self.parameter.table:gsub('\n', ',')
+    return string.gsub(source, '%a+', replaces)
+  end,
+
+}
+
